@@ -116,6 +116,31 @@ public class Metrics {
      */
     private TelnetProtocol telnet;
     /**
+     * Monitoring configuration information using the public smtp protocol
+     * 使用smtp协议的监控配置信息
+     */
+    private SmtpProtocol smtp;
+    /**
+     * Monitoring configuration information using the public ntp protocol
+     * 使用ntp协议的监控配置信息
+     */
+    private NtpProtocol ntp;
+    /**
+     * Monitoring configuration information using the websocket protocol
+     * 使用websocket的监控配置信息
+     */
+    private WebsocketProtocol websocket;
+    /**
+     * Monitoring configuration information using the memcached protocol
+     * 使用memcached的监控配置信息
+     */
+    private MemcachedProtocol memcached;
+    /**
+     * Monitoring configuration information using the nebulaGraph protocol
+     * 使用nebulaGraph的监控配置信息
+     */
+    private NebulaGraphProtocol nebulaGraph;
+    /**
      * Use udp implemented by socket for service port detection configuration information
      * 使用socket实现的udp进行服务端口探测配置信息
      */
@@ -167,6 +192,22 @@ public class Metrics {
      * Monitoring configuration information using the public prometheus protocol
      */
     private PrometheusProtocol prometheus;
+    /**
+     * Monitoring configuration information using the public DNS protocol
+     */
+    private DnsProtocol dns;
+    /**
+     * Monitoring configuration information using the public Nginx protocol
+     */
+    private NginxProtocol nginx;
+    /**
+     * Monitoring configuration information using the public Nginx protocol
+     */
+    private Pop3Protocol pop3;
+    /**
+     * Monitoring configuration information using the public http_sd protocol
+     */
+    private HttpsdProtocol httpsd;
 
     /**
      * collector use - Temporarily store subTask metrics response data
@@ -246,6 +287,9 @@ public class Metrics {
         return Objects.hash(name);
     }
 
+    /**
+     * Metrics.Field
+     */
     @Data
     @AllArgsConstructor
     @NoArgsConstructor

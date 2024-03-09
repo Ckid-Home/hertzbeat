@@ -20,6 +20,7 @@ sidebar_label: 安装包方式部署
    修改位于 `hertzbeat/config/application.yml` 的配置文件(可选)，您可以根据需求修改配置文件     
    - 若需使用邮件发送告警，需替换`application.yml`里面的邮件服务器参数
    - **推荐**若需使用外置Mysql数据库替换内置H2数据库，需替换`application.yml`里面的`spring.datasource`参数 具体步骤参见 [H2数据库切换为MYSQL](mysql-change)）
+   - **强烈推荐** 以后我们将主要支持VictoriaMetrics作为时序数据库，若需使用时序数据库VictoriaMetrics来存储指标数据，需替换`application.yml`里面的`warehouse.store.victoria-metrics`参数 具体步骤参见 [使用VictoriaMetrics存储指标数据](victoria-metrics-init)
    - **推荐**若需使用时序数据库TDengine来存储指标数据，需替换`application.yml`里面的`warehouse.store.td-engine`参数 具体步骤参见 [使用TDengine存储指标数据](tdengine-init)
    - **推荐**若需使用时序数据库IotDB来存储指标数据库，需替换`application.yml`里面的`warehouse.storeiot-db`参数 具体步骤参见 [使用IotDB存储指标数据](iotdb-init)
 
@@ -64,14 +65,14 @@ sidebar_label: 安装包方式部署
 1. **若您使用的是不含JDK的安装包，需您提前准备JAVA运行环境**
 
 安装JAVA运行环境-可参考[官方网站](http://www.oracle.com/technetwork/java/javase/downloads/index.html)    
-要求：JAVA11环境   
+要求：JAVA17环境   
 下载JAVA安装包: [镜像站](https://repo.huaweicloud.com/java/jdk/)   
 安装后命令行检查是否成功安装
    ```
    $ java -version
-   java version "11.0.12"
-   Java(TM) SE Runtime Environment 18.9 (build 11.0.12+8-LTS-237)
-   Java HotSpot(TM) 64-Bit Server VM 18.9 (build 11.0.12+8-LTS-237, mixed mode)
+   java version "17.0.9"
+   Java(TM) SE Runtime Environment 17.0.9 (build 17.0.9+8-LTS-237)
+   Java HotSpot(TM) 64-Bit Server VM 17.0.9 (build 17.0.9+8-LTS-237, mixed mode)
 
    ```
 
@@ -86,6 +87,6 @@ sidebar_label: 安装包方式部署
 > 二：若是安装包安装的TDengine2.3+，除了启动server外，还需执行 `systemctl start taosadapter` 启动 adapter    
 
 4. **监控历史图表长时间都一直无数据**
-> 一：Tdengine或IoTDB是否配置，未配置则无历史图表数据  
+> 一：时序数据库是否配置，未配置则无历史图表数据  
 > 二：若使用了Tdengine，排查Tdengine的数据库`hertzbeat`是否创建
-> 三: HertzBeat的配置文件 `application.yml` 里面的依赖服务 IotDB 或 Tdengine IP账户密码等配置是否正确   
+> 三: HertzBeat的配置文件 `application.yml` 里面的依赖服务 时序数据库 IP账户密码等配置是否正确   

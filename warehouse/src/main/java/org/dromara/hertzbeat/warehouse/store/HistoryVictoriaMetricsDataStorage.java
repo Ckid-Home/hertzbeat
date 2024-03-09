@@ -49,7 +49,6 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAmount;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * tdengine data storage
@@ -73,13 +72,13 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
     private static final String STATUS_PATH = "/api/v1/status/tsdb";
     private static final String STATUS = "status";
     private static final String STATUS_SUCCESS = "success";
-    private static final String NAME_KEY = "__name__";
+    private static final String LABEL_KEY_NAME = "__name__";
+    private static final String LABEL_KEY_JOB = "job";
+    private static final String LABEL_KEY_INSTANCE = "instance";
     private static final String SPILT = "_";
     private static final String BASIC = "Basic";
-    private static final String MONITOR_TYPE_KEY = "__app__";
     private static final String MONITOR_METRICS_KEY = "__metrics__";
     private static final String MONITOR_METRIC_KEY = "__metric__";
-    private static final String MONITOR_ID_KEY = "__monitorId__";
     
     private final WarehouseProperties.StoreProperties.VictoriaMetricsProperties victoriaMetricsProp;
     
@@ -92,10 +91,10 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
         }
         this.restTemplate = restTemplate;
         victoriaMetricsProp = properties.getStore().getVictoriaMetrics();
-        serverAvailable = initVictoriaMetricsDatasource();
+        serverAvailable = checkVictoriaMetricsDatasourceAvailable();
     }
 
-    private boolean initVictoriaMetricsDatasource() {
+    private boolean checkVictoriaMetricsDatasourceAvailable() {
         // check server status
         try {
             String result = restTemplate.getForObject(victoriaMetricsProp.getUrl() + STATUS_PATH, String.class);
@@ -106,17 +105,16 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
             }
             log.error("check victoria metrics server status not success: {}.", result);
         } catch (Exception e) {
-            log.error("check victoria metrics server status error: {}.", e.getMessage(), e);
+            log.error("check victoria metrics server status error: {}.", e.getMessage());
         }
-        log.warn("\n\t------------------WARN WARN WARN------------------\n" +
-                "\t---------------Init VictoriaMetrics Failed---------------\n" +
-                "\t--------------Please Config VictoriaMetrics--------------\n" +
-                "\t---------Or Can Not Use Metric History Now---------\n");
         return false;
     }
 
     @Override
     public void saveData(CollectRep.MetricsData metricsData) {
+        if (!isServerAvailable()) {
+            serverAvailable = checkVictoriaMetricsDatasourceAvailable();
+        }
         if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {
             return;
         }
@@ -125,9 +123,16 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
             return;
         }
         Map<String, String> defaultLabels = new HashMap<>(8);
-        defaultLabels.put(MONITOR_ID_KEY, String.valueOf(metricsData.getId()));
-        defaultLabels.put(MONITOR_TYPE_KEY, metricsData.getApp());
         defaultLabels.put(MONITOR_METRICS_KEY, metricsData.getMetrics());
+        boolean isPrometheusAuto = false;
+        if (metricsData.getApp().startsWith(CommonConstants.PROMETHEUS_APP_PREFIX)) {
+            isPrometheusAuto = true;
+            defaultLabels.put(LABEL_KEY_JOB, metricsData.getApp()
+                    .substring(CommonConstants.PROMETHEUS_APP_PREFIX.length()));   
+        } else {
+            defaultLabels.put(LABEL_KEY_JOB, metricsData.getApp());
+        }
+        defaultLabels.put(LABEL_KEY_INSTANCE, String.valueOf(metricsData.getId()));
         
         List<CollectRep.Field> fields = metricsData.getFieldsList();
         Long[] timestamp = new Long[]{metricsData.getTime()};
@@ -154,7 +159,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                 if (entry.getKey() != null && entry.getValue() != null) {
                     try {
                         labels.putAll(defaultLabels);
-                        labels.put(NAME_KEY, metricsData.getApp() + SPILT + metricsData.getMetrics() + SPILT + entry.getKey());
+                        String labelName = isPrometheusAuto ? metricsData.getMetrics() 
+                                : metricsData.getMetrics() + SPILT + entry.getKey();
+                        labels.put(LABEL_KEY_NAME, labelName);
                         labels.put(MONITOR_METRIC_KEY, entry.getKey());
                         VictoriaMetricsContent content = VictoriaMetricsContent.builder()
                                 .metric(labels)
@@ -191,8 +198,13 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
     
     @Override
     public Map<String, List<Value>> getHistoryMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
-        String timeSeriesSelector = NAME_KEY + "=\"" + app + SPILT + metrics + SPILT + metric + "\"" + 
-                "," + MONITOR_ID_KEY + "=\"" + monitorId + "\"";
+        String labelName = metrics + SPILT + metric;
+        if (CommonConstants.PROMETHEUS.equals(app)) {
+            labelName = metrics;
+        }
+        String timeSeriesSelector = LABEL_KEY_NAME + "=\"" + labelName + "\"" + 
+                "," + LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"" +
+                "," + MONITOR_METRIC_KEY + "=\"" + metric + "\"";
         Map<String, List<Value>> instanceValuesMap = new HashMap<>(8);
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -207,6 +219,8 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
             HttpEntity<Void> httpEntity = new HttpEntity<>(headers);
             URI uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + EXPORT_PATH)
                     .queryParam(URLEncoder.encode("match[]", StandardCharsets.UTF_8), URLEncoder.encode("{" + timeSeriesSelector + "}", StandardCharsets.UTF_8))
+                    .queryParam("start", URLEncoder.encode("now-" + history, StandardCharsets.UTF_8))
+                    .queryParam("end", "now")
                     .build(true).toUri();
             ResponseEntity<String> responseEntity = restTemplate.exchange(uri,
                     HttpMethod.GET, httpEntity, String.class);
@@ -216,12 +230,12 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                     String[] contentJsonArr = responseEntity.getBody().split("\n");
                     List<VictoriaMetricsContent> contents = Arrays.stream(contentJsonArr).map(
                             item ->  JsonUtil.fromJson(item, VictoriaMetricsContent.class)
-                    ).collect(Collectors.toList());
+                    ).toList();
                     for (VictoriaMetricsContent content : contents) {
                         Map<String, String> labels = content.getMetric();
-                        labels.remove(NAME_KEY);
-                        labels.remove(MONITOR_ID_KEY);
-                        labels.remove(MONITOR_TYPE_KEY);
+                        labels.remove(LABEL_KEY_NAME);
+                        labels.remove(LABEL_KEY_JOB);
+                        labels.remove(LABEL_KEY_INSTANCE);
                         labels.remove(MONITOR_METRICS_KEY);
                         labels.remove(MONITOR_METRIC_KEY);
                         String labelStr = JsonUtil.toJson(labels);
@@ -275,8 +289,13 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
             ZonedDateTime dateTime = ZonedDateTime.now().minus(Duration.ofHours(6));
             startTime = dateTime.toEpochSecond();
         }
-        String timeSeriesSelector = NAME_KEY + "=\"" + app + SPILT + metrics + SPILT + metric + "\"" +
-                "," + MONITOR_ID_KEY + "=\"" + monitorId + "\"";
+        String labelName = metrics + SPILT + metric;
+        if (CommonConstants.PROMETHEUS.equals(app)) {
+            labelName = metrics;
+        }
+        String timeSeriesSelector = LABEL_KEY_NAME + "=\"" + labelName + "\"" +
+                "," + LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"" +
+                "," + MONITOR_METRIC_KEY + "=\"" + metric + "\"";
         Map<String, List<Value>> instanceValuesMap = new HashMap<>(8);
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -304,9 +323,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                     List<VictoriaMetricsQueryContent.ContentData.Content> contents = responseEntity.getBody().getData().getResult();
                     for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {
                         Map<String, String> labels = content.getMetric();
-                        labels.remove(NAME_KEY);
-                        labels.remove(MONITOR_ID_KEY);
-                        labels.remove(MONITOR_TYPE_KEY);
+                        labels.remove(LABEL_KEY_NAME);
+                        labels.remove(LABEL_KEY_JOB);
+                        labels.remove(LABEL_KEY_INSTANCE);
                         labels.remove(MONITOR_METRICS_KEY);
                         labels.remove(MONITOR_METRIC_KEY);
                         String labelStr = JsonUtil.toJson(labels);
@@ -314,7 +333,7 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                             List<Value> valueList = instanceValuesMap.computeIfAbsent(labelStr, k -> new LinkedList<>());
                             for (Object[] valueArr : content.getValues()) {
                                 long timestamp = Long.parseLong(String.valueOf(valueArr[0]));
-                                String value = String.valueOf(valueArr[1]);
+                                String value = new BigDecimal(String.valueOf(valueArr[1])).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
                                 // read timestamp here is s unit
                                 valueList.add(new Value(value, timestamp * 1000));   
                             }
@@ -339,9 +358,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                     List<VictoriaMetricsQueryContent.ContentData.Content> contents = responseEntity.getBody().getData().getResult();
                     for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {
                         Map<String, String> labels = content.getMetric();
-                        labels.remove(NAME_KEY);
-                        labels.remove(MONITOR_ID_KEY);
-                        labels.remove(MONITOR_TYPE_KEY);
+                        labels.remove(LABEL_KEY_NAME);
+                        labels.remove(LABEL_KEY_JOB);
+                        labels.remove(LABEL_KEY_INSTANCE);
                         labels.remove(MONITOR_METRICS_KEY);
                         labels.remove(MONITOR_METRIC_KEY);
                         String labelStr = JsonUtil.toJson(labels);
@@ -351,7 +370,8 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                                 for (int timestampIndex = 0; timestampIndex < valueList.size(); timestampIndex++) {
                                     Value value = valueList.get(timestampIndex);
                                     Object[] valueArr = content.getValues().get(timestampIndex);
-                                    value.setMax(String.valueOf(valueArr[1]));
+                                    String maxValue = new BigDecimal(String.valueOf(valueArr[1])).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+                                    value.setMax(maxValue);
                                 }
                             }
                         }
@@ -373,9 +393,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                     List<VictoriaMetricsQueryContent.ContentData.Content> contents = responseEntity.getBody().getData().getResult();
                     for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {
                         Map<String, String> labels = content.getMetric();
-                        labels.remove(NAME_KEY);
-                        labels.remove(MONITOR_ID_KEY);
-                        labels.remove(MONITOR_TYPE_KEY);
+                        labels.remove(LABEL_KEY_NAME);
+                        labels.remove(LABEL_KEY_JOB);
+                        labels.remove(LABEL_KEY_INSTANCE);
                         labels.remove(MONITOR_METRICS_KEY);
                         labels.remove(MONITOR_METRIC_KEY);
                         String labelStr = JsonUtil.toJson(labels);
@@ -385,7 +405,8 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                                 for (int timestampIndex = 0; timestampIndex < valueList.size(); timestampIndex++) {
                                     Value value = valueList.get(timestampIndex);
                                     Object[] valueArr = content.getValues().get(timestampIndex);
-                                    value.setMin(String.valueOf(valueArr[1]));
+                                    String minValue = new BigDecimal(String.valueOf(valueArr[1])).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+                                    value.setMin(minValue);
                                 }
                             }
                         }
@@ -407,9 +428,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                     List<VictoriaMetricsQueryContent.ContentData.Content> contents = responseEntity.getBody().getData().getResult();
                     for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {
                         Map<String, String> labels = content.getMetric();
-                        labels.remove(NAME_KEY);
-                        labels.remove(MONITOR_ID_KEY);
-                        labels.remove(MONITOR_TYPE_KEY);
+                        labels.remove(LABEL_KEY_NAME);
+                        labels.remove(LABEL_KEY_JOB);
+                        labels.remove(LABEL_KEY_INSTANCE);
                         labels.remove(MONITOR_METRICS_KEY);
                         labels.remove(MONITOR_METRIC_KEY);
                         String labelStr = JsonUtil.toJson(labels);
@@ -419,7 +440,8 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
                                 for (int timestampIndex = 0; timestampIndex < valueList.size(); timestampIndex++) {
                                     Value value = valueList.get(timestampIndex);
                                     Object[] valueArr = content.getValues().get(timestampIndex);
-                                    value.setMean(String.valueOf(valueArr[1]));
+                                    String avgValue = new BigDecimal(String.valueOf(valueArr[1])).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+                                    value.setMean(avgValue);
                                 }
                             }
                         }
@@ -431,7 +453,10 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
         }
         return instanceValuesMap;
     }
-    
+
+    /**
+     * victoria metrics content
+     */
     @Data
     @Builder
     @AllArgsConstructor
@@ -455,6 +480,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
         private Long[] timestamps;
     }
 
+    /**
+     * victoria metrics query content
+     */
     @Data
     @Builder
     @AllArgsConstructor
@@ -464,7 +492,10 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
         private String status;
         
         private ContentData data;
-        
+
+        /**
+         * content data
+         */
         @Data
         @AllArgsConstructor
         @NoArgsConstructor
@@ -474,6 +505,9 @@ public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorag
             
             private List<Content> result;
 
+            /**
+             * content
+             */
             @Data
             @AllArgsConstructor
             @NoArgsConstructor

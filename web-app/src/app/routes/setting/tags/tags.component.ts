@@ -101,6 +101,7 @@ export class SettingTagsComponent implements OnInit {
         deleteTags$.unsubscribe();
         if (message.code === 0) {
           this.notifySvc.success(this.i18nSvc.fanyi('common.notify.delete-success'), '');
+          this.updatePageIndex(tagIds.size);
           this.loadTagsTable();
         } else {
           this.tableLoading = false;
@@ -113,6 +114,11 @@ export class SettingTagsComponent implements OnInit {
         this.notifySvc.error(this.i18nSvc.fanyi('common.notify.delete-fail'), error.msg);
       }
     );
+  }
+
+  updatePageIndex(delSize: number) {
+    const lastPage = Math.max(1, Math.ceil((this.total - delSize) / this.pageSize));
+    this.pageIndex = this.pageIndex > lastPage ? lastPage : this.pageIndex;
   }
 
   // begin: 列表多选分页逻辑
@@ -162,6 +168,9 @@ export class SettingTagsComponent implements OnInit {
     this.tag.name = this.tag.name.trim();
     if (this.tag.value != undefined) {
       this.tag.value = this.tag.value.trim();
+    }
+    if (this.tag.description != undefined) {
+      this.tag.description = this.tag.description.trim();
     }
     if (this.isManageModalAdd) {
       const modalOk$ = this.tagService

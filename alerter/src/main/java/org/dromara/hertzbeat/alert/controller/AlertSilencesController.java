@@ -32,8 +32,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -86,7 +86,7 @@ public class AlertSilencesController {
         };
         Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.fromString(order), sort));
         PageRequest pageRequest = PageRequest.of(pageIndex, pageSize, sortExp);
-        Page<AlertSilence> alertSilencePage = alertSilenceService.getAlertSilences(specification,pageRequest);
+        Page<AlertSilence> alertSilencePage = alertSilenceService.getAlertSilences(specification, pageRequest);
         Message<Page<AlertSilence>> message = Message.success(alertSilencePage);
         return ResponseEntity.ok(message);
     }

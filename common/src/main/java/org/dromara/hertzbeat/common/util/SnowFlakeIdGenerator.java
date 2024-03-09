@@ -17,16 +17,27 @@
 
 package org.dromara.hertzbeat.common.util;
 
+import org.hibernate.HibernateException;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.id.IdentifierGenerator;
+
+import java.io.Serializable;
+
 /**
  * Snowflake Algorithm Generator Tool
  * @author tomsun28
  */
-public class SnowFlakeIdGenerator {
+public class SnowFlakeIdGenerator implements IdentifierGenerator {
 
     private static final SnowFlakeIdWorker ID_WORKER;
-
+    
     static {
         ID_WORKER = new SnowFlakeIdWorker();
+    }
+
+    @Override
+    public Serializable generate(SharedSessionContractImplementor s, Object obj) throws HibernateException {
+        return SnowFlakeIdGenerator.generateId();
     }
 
     public static long generateId() {

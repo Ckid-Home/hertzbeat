@@ -17,6 +17,7 @@
 
 package org.dromara.hertzbeat.manager.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.template.TemplateAvailabilityProvider;
 import org.springframework.boot.autoconfigure.template.TemplateAvailabilityProviders;
 import org.springframework.boot.autoconfigure.web.WebProperties;
@@ -31,8 +32,8 @@ import org.springframework.util.Assert;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
@@ -44,6 +45,7 @@ import java.util.Map;
  *
  */
 @Configuration
+@Slf4j
 public class AngularErrorViewResolver implements ErrorViewResolver, Ordered {
 
     private static final Map<HttpStatus.Series, String> SERIES_VIEWS;
@@ -56,7 +58,7 @@ public class AngularErrorViewResolver implements ErrorViewResolver, Ordered {
         SERIES_VIEWS = Collections.unmodifiableMap(views);
     }
 
-    private ApplicationContext applicationContext;
+    private final ApplicationContext applicationContext;
 
     private final WebProperties.Resources resources;
 
@@ -103,6 +105,7 @@ public class AngularErrorViewResolver implements ErrorViewResolver, Ordered {
                     return new ModelAndView(new HtmlResourceView(resource), model);
                 }
             } catch (Exception ex) {
+                log.error("Error resolving resource", ex);
             }
         }
         return null;
@@ -122,7 +125,7 @@ public class AngularErrorViewResolver implements ErrorViewResolver, Ordered {
      */
     private static class HtmlResourceView implements View {
 
-        private Resource resource;
+        private final Resource resource;
 
         HtmlResourceView(Resource resource) {
             this.resource = resource;

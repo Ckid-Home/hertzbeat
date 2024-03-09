@@ -147,6 +147,31 @@ export class MonitorListComponent implements OnInit {
       }
     );
   }
+  changeMonitorTable(sortField?: string | null, sortOrder?: string | null) {
+    this.tableLoading = true;
+    let monitorInit$ = this.monitorSvc
+      .searchMonitors(this.app, this.tag, this.filterContent, this.filterStatus, this.pageIndex - 1, this.pageSize, sortField, sortOrder)
+      .subscribe(
+        message => {
+          this.tableLoading = false;
+          this.checkedAll = false;
+          this.checkedMonitorIds.clear();
+          if (message.code === 0) {
+            let page = message.data;
+            this.monitors = page.content;
+            this.pageIndex = page.number + 1;
+            this.total = page.totalElements;
+          } else {
+            console.warn(message.msg);
+          }
+          monitorInit$.unsubscribe();
+        },
+        error => {
+          this.tableLoading = false;
+          monitorInit$.unsubscribe();
+        }
+      );
+  }
 
   onEditOneMonitor(monitorId: number) {
     if (monitorId == null) {
@@ -221,6 +246,7 @@ export class MonitorListComponent implements OnInit {
         deleteMonitors$.unsubscribe();
         if (message.code === 0) {
           this.notifySvc.success(this.i18nSvc.fanyi('common.notify.delete-success'), '');
+          this.updatePageIndex(monitors.size);
           this.loadMonitorTable();
         } else {
           this.tableLoading = false;
@@ -233,6 +259,11 @@ export class MonitorListComponent implements OnInit {
         this.notifySvc.error(this.i18nSvc.fanyi('common.notify.delete-fail'), error.msg);
       }
     );
+  }
+
+  updatePageIndex(delSize: number) {
+    const lastPage = Math.max(1, Math.ceil((this.total - delSize) / this.pageSize));
+    this.pageIndex = this.pageIndex > lastPage ? lastPage : this.pageIndex;
   }
 
   exportMonitors(type: string) {
@@ -422,7 +453,7 @@ export class MonitorListComponent implements OnInit {
     const currentSort = sort.find(item => item.value !== null);
     const sortField = (currentSort && currentSort.key) || null;
     const sortOrder = (currentSort && currentSort.value) || null;
-    this.loadMonitorTable(sortField, sortOrder);
+    this.changeMonitorTable(sortField, sortOrder);
   }
 
   protected readonly sliceTagName = formatTagName;
